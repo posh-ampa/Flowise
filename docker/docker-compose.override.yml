@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: flowise-postgres
+    environment:
+      POSTGRES_USER: flowise
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: flowise
+    volumes:
+      - flowise_pg_data:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowise -d flowise"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  flowise:
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_TYPE=postgres
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=flowise
+      - DATABASE_USER=flowise
+      - DATABASE_PASSWORD=password
+      - DATABASE_SSL=false
+
+volumes:
+  flowise_pg_data:
+    name: docker_flowise_pg_data
