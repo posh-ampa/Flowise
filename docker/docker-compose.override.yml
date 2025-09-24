@@ -29,6 +29,53 @@ services:
       - DATABASE_PASSWORD=password
       - DATABASE_SSL=false
 
+  # Nightly Postgres DB backup to S3
+  pg-backup:
+    build:
+      context: ./backup
+    container_name: flowise-pg-backup
+    environment:
+      # AWS credentials and region
+      - AWS_ACCESS_KEY_ID=${BACKUP_AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${BACKUP_AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${BACKUP_AWS_REGION}
+      # S3 bucket and optional prefix/retention
+      - BACKUP_S3_BUCKET=${BACKUP_S3_BUCKET}
+      - S3_PREFIX=${PG_BACKUP_S3_PREFIX:-flowise/backups/postgres}
+      - RETENTION_DAYS=${PG_BACKUP_RETENTION_DAYS:-7}
+      # Postgres connection (use Compose service by default)
+      - POSTGRES_HOST=${PG_BACKUP_HOST:-postgres}
+      - POSTGRES_PORT=${PG_BACKUP_PORT:-5432}
+      - POSTGRES_DB=${PG_BACKUP_DB:-flowise}
+      - POSTGRES_USER=${PG_BACKUP_USER:-flowise}
+      - POSTGRES_PASSWORD=${PG_BACKUP_PASSWORD:-password}
+    entrypoint: ["/bin/sh","-lc","printenv > /app/env && echo '0 2 * * * /usr/local/bin/run-with-env.sh /usr/local/bin/backup-pg.sh' > /etc/cron.d/pg-backup && chmod 0644 /etc/cron.d/pg-backup && crontab /etc/cron.d/pg-backup && cron -f"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Nightly Flowise files backup to S3 (secrets, logs, storage)
+  files-backup:
+    build:
+      context: ./backup
+    container_name: flowise-files-backup
+    volumes:
+      - ~/.flowise:/data/.flowise:ro
+    environment:
+      # AWS credentials and region
+      - AWS_ACCESS_KEY_ID=${BACKUP_AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${BACKUP_AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${BACKUP_AWS_REGION}
+      # S3 bucket and optional prefix/retention
+      - BACKUP_S3_BUCKET=${BACKUP_S3_BUCKET}
+      - S3_PREFIX=${FILES_BACKUP_S3_PREFIX:-flowise/backups/files}
+      - RETENTION_DAYS=${FILES_BACKUP_RETENTION_DAYS:-7}
+      # Path inside container to archive
+      - FLOWISE_DATA_PATH=/data/.flowise
+    entrypoint: ["/bin/sh","-lc","printenv > /app/env && echo '0 3 * * * /usr/local/bin/run-with-env.sh /usr/local/bin/backup-files.sh' > /etc/cron.d/files-backup && chmod 0644 /etc/cron.d/files-backup && crontab /etc/cron.d/files-backup && cron -f"]
+    restart: unless-stopped
+
 volumes:
   flowise_pg_data:
     name: docker_flowise_pg_data
